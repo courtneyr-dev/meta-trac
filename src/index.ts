@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type Env, type TracInstanceConfig, getTracConfig } from "./config";
 
 // JSON-RPC 2.0 message schemas
 const JsonRpcRequestSchema = z.object({
@@ -15,7 +16,7 @@ const chatgptCache = new Map<string, any>();
 /**
  * Handle MCP JSON-RPC 2.0 requests
  */
-async function handleMcpRequest(request: any): Promise<any> {
+async function handleMcpRequest(request: any, config: TracInstanceConfig): Promise<any> {
   const { method, params, id } = request;
 
   switch (method) {
@@ -30,7 +31,7 @@ async function handleMcpRequest(request: any): Promise<any> {
             prompts: {},
           },
           serverInfo: {
-            name: "WordPress Trac",
+            name: config.instanceName,
             version: "1.0.0",
           },
         },
@@ -44,7 +45,7 @@ async function handleMcpRequest(request: any): Promise<any> {
           tools: [
             {
               name: "searchTickets",
-              description: "Search for WordPress Trac tickets by keyword or filter expression. Returns ticket summaries with basic info.",
+              description: `Search for ${config.displayName} tickets by keyword or filter expression. Returns ticket summaries with basic info.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -71,7 +72,7 @@ async function handleMcpRequest(request: any): Promise<any> {
             },
             {
               name: "getTicket",
-              description: "Get detailed information about a specific WordPress Trac ticket including description, comments, and metadata.",
+              description: `Get detailed information about a specific ${config.displayName} ticket including description, comments, and metadata.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -95,7 +96,7 @@ async function handleMcpRequest(request: any): Promise<any> {
             },
             {
               name: "getChangeset",
-              description: "Get information about a specific WordPress code changeset/commit including commit message, author, and diff.",
+              description: `Get information about a specific ${config.displayName} changeset/commit including commit message, author, and diff.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -119,7 +120,7 @@ async function handleMcpRequest(request: any): Promise<any> {
             },
             {
               name: "getTimeline",
-              description: "Get recent activity from WordPress Trac timeline including recent tickets, commits, and other events.",
+              description: `Get recent activity from ${config.displayName} timeline including recent tickets, commits, and other events.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -138,7 +139,7 @@ async function handleMcpRequest(request: any): Promise<any> {
             },
             {
               name: "getTracInfo",
-              description: "Get WordPress Trac metadata like components, milestones, priorities, and severities.",
+              description: `Get ${config.displayName} metadata like components, milestones, priorities, and severities.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -164,10 +165,10 @@ async function handleMcpRequest(request: any): Promise<any> {
         switch (name) {
           case "searchTickets": {
             const { query, limit = 10, status, component } = args;
-            
+
             try {
               // Build Trac query URL
-              const queryUrl = new URL('https://core.trac.wordpress.org/query');
+              const queryUrl = new URL(`${config.baseUrl}/query`);
               queryUrl.searchParams.set('format', 'csv');
               queryUrl.searchParams.set('max', Math.min(limit, 50).toString());
               
@@ -208,7 +209,7 @@ async function handleMcpRequest(request: any): Promise<any> {
               // Check if we got HTML instead of CSV (403 error)
               if (csvData.includes('<html>') || csvData.includes('403 Forbidden')) {
                 // Fallback: try without search parameters
-                const fallbackUrl = new URL('https://core.trac.wordpress.org/query');
+                const fallbackUrl = new URL(`${config.baseUrl}/query`);
                 fallbackUrl.searchParams.set('format', 'csv');
                 fallbackUrl.searchParams.set('max', Math.min(limit * 3, 100).toString()); // Get more to filter
                 
@@ -283,7 +284,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                       id: parseInt(values[0]),
                       title: values[1] || '',
                       text: `#${values[0]}: ${values[1] || 'No summary'}\nStatus: ${values[2] || 'unknown'}\nOwner: ${values[3] || 'unassigned'}\nType: ${values[4] || 'unknown'}\nPriority: ${values[5] || 'unknown'}\nMilestone: ${values[6] || 'none'}`,
-                      url: `https://core.trac.wordpress.org/ticket/${values[0]}`,
+                      url: `${config.baseUrl}/ticket/${values[0]}`,
                       metadata: {
                         status: values[2] || 'unknown',
                         owner: values[3] || 'unassigned',
@@ -345,7 +346,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                     id: parseInt(values[0]),
                     title: values[1] || '',
                     text: `#${values[0]}: ${values[1] || 'No summary'}\nStatus: ${values[4] || 'unknown'}\nOwner: ${values[2] || 'unassigned'}\nType: ${values[3] || 'unknown'}\nPriority: ${values[5] || 'unknown'}\nMilestone: ${values[6] || 'none'}`,
-                    url: `https://core.trac.wordpress.org/ticket/${values[0]}`,
+                    url: `${config.baseUrl}/ticket/${values[0]}`,
                     metadata: {
                       status: values[4] || 'unknown',
                       owner: values[2] || 'unassigned',
@@ -354,7 +355,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                       milestone: values[6] || 'none',
                     },
                   };
-                  
+
                   tickets.push(ticket);
                 }
               }
@@ -378,10 +379,10 @@ async function handleMcpRequest(request: any): Promise<any> {
 
           case "getTicket": {
             const { id, includeComments = true } = args;
-            
+
             try {
               // Use search approach since CSV parsing is problematic
-              const searchUrl = new URL('https://core.trac.wordpress.org/query');
+              const searchUrl = new URL(`${config.baseUrl}/query`);
               searchUrl.searchParams.set('format', 'csv');
               searchUrl.searchParams.set('id', id.toString());
               searchUrl.searchParams.set('max', '1');
@@ -489,8 +490,8 @@ async function handleMcpRequest(request: any): Promise<any> {
                     result = {
                       id: id,
                       title: `#${id}: ${ticket.summary}`,
-                      text: `Ticket #${id}: ${ticket.summary}\n\nStatus: ${ticket.status}\nComponent: ${ticket.component}\nPriority: ${ticket.priority}\nType: ${ticket.type}\nReporter: ${ticket.reporter}\nOwner: ${ticket.owner}\nMilestone: ${ticket.milestone}\nVersion: ${ticket.version}\nKeywords: ${ticket.keywords}\n\nDescription:\n${ticket.description}\n\nFor full discussion and comments, visit: https://core.trac.wordpress.org/ticket/${id}`,
-                      url: `https://core.trac.wordpress.org/ticket/${id}`,
+                      text: `Ticket #${id}: ${ticket.summary}\n\nStatus: ${ticket.status}\nComponent: ${ticket.component}\nPriority: ${ticket.priority}\nType: ${ticket.type}\nReporter: ${ticket.reporter}\nOwner: ${ticket.owner}\nMilestone: ${ticket.milestone}\nVersion: ${ticket.version}\nKeywords: ${ticket.keywords}\n\nDescription:\n${ticket.description}\n\nFor full discussion and comments, visit: ${config.baseUrl}/ticket/${id}`,
+                      url: `${config.baseUrl}/ticket/${id}`,
                       metadata: {
                         ticket,
                         comments,
@@ -511,7 +512,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                 id: id,
                 title: `Error loading ticket ${id}`,
                 text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                url: `https://core.trac.wordpress.org/ticket/${id}`,
+                url: `${config.baseUrl}/ticket/${id}`,
                 metadata: { error: true },
               };
             }
@@ -520,9 +521,9 @@ async function handleMcpRequest(request: any): Promise<any> {
 
           case "getChangeset": {
             const { revision, includeDiff = true, diffLimit = 2000 } = args;
-            
+
             try {
-              const changesetUrl = `https://core.trac.wordpress.org/changeset/${revision}`;
+              const changesetUrl = `${config.baseUrl}/changeset/${revision}`;
               
               // Fetch changeset page
               const response = await fetch(changesetUrl, {
@@ -613,7 +614,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                 id: revision.toString(),
                 title: `Error loading changeset ${revision}`,
                 text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                url: `https://core.trac.wordpress.org/changeset/${revision}`,
+                url: `${config.baseUrl}/changeset/${revision}`,
                 metadata: { error: true },
               };
             }
@@ -622,9 +623,9 @@ async function handleMcpRequest(request: any): Promise<any> {
 
           case "getTimeline": {
             const { days = 7, limit = 20 } = args;
-            
+
             try {
-              const timelineUrl = `https://core.trac.wordpress.org/timeline?from=${days}%2Bdays+ago&max=${Math.min(limit, 100)}&format=rss`;
+              const timelineUrl = `${config.baseUrl}/timeline?from=${days}%2Bdays+ago&max=${Math.min(limit, 100)}&format=rss`;
               
               const response = await fetch(timelineUrl, {
                 headers: {
@@ -685,14 +686,14 @@ async function handleMcpRequest(request: any): Promise<any> {
                 results: events,
                 totalEvents: events.length,
                 daysBack: days,
-                timelineUrl: 'https://core.trac.wordpress.org/timeline',
+                timelineUrl: `${config.baseUrl}/timeline`,
               };
             } catch (error) {
               result = {
                 results: [],
                 error: error instanceof Error ? error.message : 'Unknown error',
                 daysBack: days,
-                timelineUrl: 'https://core.trac.wordpress.org/timeline',
+                timelineUrl: `${config.baseUrl}/timeline`,
               };
             }
             break;
@@ -700,13 +701,13 @@ async function handleMcpRequest(request: any): Promise<any> {
 
           case "getTracInfo": {
             const { type } = args;
-            
+
             try {
               let data: any = {};
               let uniqueValues = new Set<string>();
-              
+
               // Get a sample of tickets to extract unique values for the requested field
-              const queryUrl = new URL('https://core.trac.wordpress.org/query');
+              const queryUrl = new URL(`${config.baseUrl}/query`);
               queryUrl.searchParams.set('format', 'csv');
               queryUrl.searchParams.set('max', '1000'); // Get more tickets for better coverage
               
@@ -812,9 +813,9 @@ async function handleMcpRequest(request: any): Promise<any> {
 
               result = {
                 id: type,
-                title: `WordPress Trac ${type}`,
-                text: `${type.charAt(0).toUpperCase() + type.slice(1)} available in WordPress Trac:\n\n${data.join('\n')}`,
-                url: 'https://core.trac.wordpress.org/',
+                title: `${config.instanceName} ${type}`,
+                text: `${type.charAt(0).toUpperCase() + type.slice(1)} available in ${config.instanceName}:\n\n${data.join('\n')}`,
+                url: config.baseUrl,
                 metadata: {
                   type,
                   data,
@@ -826,7 +827,7 @@ async function handleMcpRequest(request: any): Promise<any> {
                 id: type,
                 title: `Error loading ${type}`,
                 text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Available types: components, milestones, priorities, severities, types, statuses`,
-                url: 'https://core.trac.wordpress.org/',
+                url: config.baseUrl,
                 metadata: { error: true },
               };
             }
@@ -874,7 +875,7 @@ async function handleMcpRequest(request: any): Promise<any> {
  * Handle ChatGPT-specific MCP JSON-RPC 2.0 requests
  * Follows OpenAI's requirements for Deep Research: simplified tools (search, fetch) and OpenAI response format
  */
-async function handleChatGPTMcpRequest(request: any): Promise<any> {
+async function handleChatGPTMcpRequest(request: any, config: TracInstanceConfig): Promise<any> {
   const { method, params, id } = request;
 
   switch (method) {
@@ -888,7 +889,7 @@ async function handleChatGPTMcpRequest(request: any): Promise<any> {
             tools: {},
           },
           serverInfo: {
-            name: "WordPress Trac",
+            name: config.instanceName,
             version: "1.0.0",
           },
         },
@@ -902,20 +903,20 @@ async function handleChatGPTMcpRequest(request: any): Promise<any> {
           tools: [
             {
               name: "search",
-              description: `Search WordPress Trac for tickets, changesets, and timeline activity.
+              description: `Search ${config.displayName} for tickets, changesets, and timeline activity.
 
 Query Types:
-- Ticket searches: Use keywords like "block editor", "media upload", "REST API" to find related tickets
+- Ticket searches: Use keywords to find related tickets
 - Specific tickets: Use ticket numbers like "#61234" or "61234" to find specific tickets
 - Changesets: Use revision numbers like "r58504" or "58504" to find code changes
-- Recent activity: Use terms like "recent", "timeline", "latest" to see recent Trac activity
-- Components: Search by component like "REST API", "Block Editor", "Media" to find tickets in that area`,
+- Recent activity: Use terms like "recent", "timeline", "latest" to see recent activity
+- Components: Search by component to find tickets in that area`,
               inputSchema: {
                 type: "object",
                 properties: {
                   query: {
                     type: "string",
-                    description: "Search query for WordPress Trac. Can be keywords, ticket numbers, revision numbers, or component names.",
+                    description: `Search query for ${config.instanceName}. Can be keywords, ticket numbers, revision numbers, or component names.`,
                   }
                 },
                 required: ["query"]
@@ -923,7 +924,7 @@ Query Types:
             },
             {
               name: "fetch",
-              description: "Retrieve detailed information about a specific WordPress Trac item by its ID.",
+              description: `Retrieve detailed information about a specific ${config.displayName} item by its ID.`,
               inputSchema: {
                 type: "object",
                 properties: {
@@ -960,24 +961,24 @@ Query Types:
               if (isTicketNumber) {
                 // Direct ticket lookup
                 const ticketId = parseInt(query.replace('#', ''), 10);
-                const ticketResult = await getTicketForChatGPT(ticketId, false);
+                const ticketResult = await getTicketForChatGPT(ticketId, false, config);
                 if (ticketResult && !ticketResult.metadata?.error) {
                   searchResults = [ticketResult];
                 }
               } else if (isRevisionNumber) {
                 // Direct changeset lookup
                 const revision = parseInt(query.replace('r', ''), 10);
-                const changesetResult = await getChangesetForChatGPT(revision, false);
+                const changesetResult = await getChangesetForChatGPT(revision, false, config);
                 if (changesetResult && !changesetResult.metadata?.error) {
                   searchResults = [changesetResult];
                 }
               } else if (isTimelineQuery) {
                 // Timeline search
-                const timelineResults = await getTimelineForChatGPT(7, 20);
+                const timelineResults = await getTimelineForChatGPT(7, 20, config);
                 searchResults = timelineResults.results || [];
               } else {
                 // Keyword search for tickets
-                const ticketResults = await searchTicketsForChatGPT(query, 10);
+                const ticketResults = await searchTicketsForChatGPT(query, 10, config);
                 searchResults = ticketResults.results || [];
                 
                 // Also populate cache for potential fetch operations
@@ -1016,15 +1017,15 @@ Query Types:
               if (chatgptCache.has(id)) {
                 // Use cached data if available
                 const cached = chatgptCache.get(id);
-                fetchResult = await formatCachedTicketForChatGPT(cached, id);
+                fetchResult = await formatCachedTicketForChatGPT(cached, id, config);
               } else if (isRevision) {
                 // Fetch changeset details
                 const revision = parseInt(id.replace('r', ''), 10);
-                fetchResult = await getChangesetForChatGPT(revision, true);
+                fetchResult = await getChangesetForChatGPT(revision, true, config);
               } else if (isTicketId) {
                 // Fetch ticket details
                 const ticketId = parseInt(id, 10);
-                fetchResult = await getTicketForChatGPT(ticketId, true);
+                fetchResult = await getTicketForChatGPT(ticketId, true, config);
               } else {
                 throw new Error(`Invalid ID format: ${id}`);
               }
@@ -1035,7 +1036,7 @@ Query Types:
                 id: id,
                 title: `Error loading ${id}`,
                 text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                url: `https://core.trac.wordpress.org/`,
+                url: config.baseUrl,
                 metadata: { error: true },
               };
             }
@@ -1081,13 +1082,13 @@ Query Types:
 
 // Helper functions for ChatGPT response formatting
 
-async function searchTicketsForChatGPT(query: string, limit: number) {
+async function searchTicketsForChatGPT(query: string, limit: number, config: TracInstanceConfig) {
   // Reuse existing searchTickets logic but format for ChatGPT
   try {
-    const queryUrl = new URL('https://core.trac.wordpress.org/query');
+    const queryUrl = new URL(`${config.baseUrl}/query`);
     queryUrl.searchParams.set('format', 'csv');
     queryUrl.searchParams.set('max', Math.min(limit, 50).toString());
-    
+
     if (query.includes('=') || query.includes('~')) {
       queryUrl.searchParams.set('summary', query);
     } else {
@@ -1101,23 +1102,23 @@ async function searchTicketsForChatGPT(query: string, limit: number) {
         'Accept-Language': 'en-US,en;q=0.9',
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const csvData = await response.text();
     const lines = csvData.trim().split('\n');
     if (lines.length < 2) {
       return { results: [] };
     }
-    
+
     const results = [];
-    
+
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]?.trim();
       if (!line) continue;
-      
+
       const values = parseCSVLine(line);
       if (values.length >= 2 && values[0] && !isNaN(parseInt(values[0]))) {
         const ticketId = parseInt(values[0]);
@@ -1127,7 +1128,7 @@ async function searchTicketsForChatGPT(query: string, limit: number) {
         const type = values[3] || 'unknown';
         const priority = values[5] || 'unknown';
         const milestone = values[6] || 'none';
-        
+
         const ticket = {
           id: ticketId,
           title,
@@ -1137,15 +1138,15 @@ async function searchTicketsForChatGPT(query: string, limit: number) {
           priority,
           milestone,
         };
-        
+
         // Cache for potential fetch
         chatgptCache.set(ticketId.toString(), ticket);
-        
+
         results.push({
           id: ticketId.toString(),
           title: `#${ticketId}: ${title}`,
           text: `Ticket #${ticketId}: ${title}\nStatus: ${status}\nType: ${type}\nPriority: ${priority}\nOwner: ${owner}\nMilestone: ${milestone}`,
-          url: `https://core.trac.wordpress.org/ticket/${ticketId}`,
+          url: `${config.baseUrl}/ticket/${ticketId}`,
           metadata: { ticket },
         });
       }
@@ -1157,30 +1158,30 @@ async function searchTicketsForChatGPT(query: string, limit: number) {
   }
 }
 
-async function getTicketForChatGPT(ticketId: number, includeComments: boolean) {
+async function getTicketForChatGPT(ticketId: number, includeComments: boolean, config: TracInstanceConfig) {
   try {
-    const searchUrl = new URL('https://core.trac.wordpress.org/query');
+    const searchUrl = new URL(`${config.baseUrl}/query`);
     searchUrl.searchParams.set('format', 'csv');
     searchUrl.searchParams.set('id', ticketId.toString());
     searchUrl.searchParams.set('max', '1');
-    
+
     const response = await fetch(searchUrl.toString(), {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; WordPress-Trac-MCP-Server/1.0)',
         'Accept': 'text/csv,text/plain,*/*',
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const csvData = await response.text();
     const lines = csvData.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
     if (lines.length < 2) {
       throw new Error(`Ticket ${ticketId} not found`);
     }
-    
+
     const values = parseCSVLine(lines[1] || '');
     if (values.length >= 2 && values[0] && parseInt(values[0]) === ticketId) {
       const ticket = {
@@ -1196,7 +1197,7 @@ async function getTicketForChatGPT(ticketId: number, includeComments: boolean) {
       // Cache the ticket
       chatgptCache.set(ticketId.toString(), ticket);
 
-      const commentNote = includeComments 
+      const commentNote = includeComments
         ? "\n\nNote: Full comments and description available on the ticket page."
         : "";
 
@@ -1204,7 +1205,7 @@ async function getTicketForChatGPT(ticketId: number, includeComments: boolean) {
         id: ticketId.toString(),
         title: `#${ticketId}: ${ticket.summary}`,
         text: `Ticket #${ticketId}: ${ticket.summary}\n\nStatus: ${ticket.status}\nType: ${ticket.type}\nPriority: ${ticket.priority}\nOwner: ${ticket.owner}\nMilestone: ${ticket.milestone}${commentNote}`,
-        url: `https://core.trac.wordpress.org/ticket/${ticketId}`,
+        url: `${config.baseUrl}/ticket/${ticketId}`,
         metadata: { ticket },
       };
     } else {
@@ -1215,15 +1216,15 @@ async function getTicketForChatGPT(ticketId: number, includeComments: boolean) {
       id: ticketId.toString(),
       title: `Error loading ticket ${ticketId}`,
       text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      url: `https://core.trac.wordpress.org/ticket/${ticketId}`,
+      url: `${config.baseUrl}/ticket/${ticketId}`,
       metadata: { error: true },
     };
   }
 }
 
-async function getChangesetForChatGPT(revision: number, includeDiff: boolean) {
+async function getChangesetForChatGPT(revision: number, includeDiff: boolean, config: TracInstanceConfig) {
   try {
-    const changesetUrl = `https://core.trac.wordpress.org/changeset/${revision}`;
+    const changesetUrl = `${config.baseUrl}/changeset/${revision}`;
     
     const response = await fetch(changesetUrl, {
       headers: {
@@ -1292,15 +1293,15 @@ async function getChangesetForChatGPT(revision: number, includeDiff: boolean) {
       id: `r${revision}`,
       title: `Error loading changeset ${revision}`,
       text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      url: `https://core.trac.wordpress.org/changeset/${revision}`,
+      url: `${config.baseUrl}/changeset/${revision}`,
       metadata: { error: true },
     };
   }
 }
 
-async function getTimelineForChatGPT(days: number, limit: number) {
+async function getTimelineForChatGPT(days: number, limit: number, config: TracInstanceConfig) {
   try {
-    const timelineUrl = `https://core.trac.wordpress.org/timeline?from=${days}%2Bdays+ago&max=${Math.min(limit, 100)}&format=rss`;
+    const timelineUrl = `${config.baseUrl}/timeline?from=${days}%2Bdays+ago&max=${Math.min(limit, 100)}&format=rss`;
     
     const response = await fetch(timelineUrl, {
       headers: {
@@ -1351,12 +1352,12 @@ async function getTimelineForChatGPT(days: number, limit: number) {
   }
 }
 
-async function formatCachedTicketForChatGPT(cached: any, id: string) {
+async function formatCachedTicketForChatGPT(cached: any, id: string, config: TracInstanceConfig) {
   return {
     id,
     title: `#${cached.id || id}: ${cached.summary || cached.title || 'Unknown'}`,
     text: `Ticket #${cached.id || id}: ${cached.summary || cached.title || 'Unknown'}\n\nStatus: ${cached.status || 'unknown'}\nType: ${cached.type || 'unknown'}\nPriority: ${cached.priority || 'unknown'}\nOwner: ${cached.owner || 'unassigned'}\nMilestone: ${cached.milestone || 'none'}\n\nNote: This is cached data. Visit the ticket URL for complete details.`,
-    url: `https://core.trac.wordpress.org/ticket/${cached.id || id}`,
+    url: `${config.baseUrl}/ticket/${cached.id || id}`,
     metadata: { ticket: cached, cached: true },
   };
 }
@@ -1405,28 +1406,28 @@ function parseCSVLine(line: string): string[] {
 }
 
 // WordPress.com styled landing page
-function getLandingPage(url: URL, versionInfo?: { id: string; tag?: string; timestamp: string }) {
+function getLandingPage(url: URL, config: TracInstanceConfig, versionInfo?: { id: string; tag?: string; timestamp: string }) {
   return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WordPress Trac MCP Server</title>
+  <title>${config.instanceName} MCP Server</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  
+
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="${url.origin}">
-  <meta property="og:title" content="WordPress Trac MCP Server">
-  <meta property="og:description" content="Model Context Protocol server for WordPress.org Trac integration">
+  <meta property="og:title" content="${config.instanceName} MCP Server">
+  <meta property="og:description" content="Model Context Protocol server for ${config.displayName}">
   <meta property="og:image" content="${url.origin}/og-image.png">
-  
+
   <!-- Twitter -->
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:url" content="${url.origin}">
-  <meta property="twitter:title" content="WordPress Trac MCP Server">
-  <meta property="twitter:description" content="Model Context Protocol server for WordPress.org Trac integration">
+  <meta property="twitter:title" content="${config.instanceName} MCP Server">
+  <meta property="twitter:description" content="Model Context Protocol server for ${config.displayName}">
   <meta property="twitter:image" content="${url.origin}/og-image.png">
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1535,48 +1536,48 @@ function getLandingPage(url: URL, versionInfo?: { id: string; tag?: string; time
   </style>
 </head>
 <body>
-  <h1>WordPress Trac MCP Server</h1>
-  <p class="subtitle">Model Context Protocol server for WordPress.org Trac integration</p>
-  
+  <h1>${config.instanceName} MCP Server</h1>
+  <p class="subtitle">Model Context Protocol server for ${config.displayName}</p>
+
   <h2>Standard MCP Tools</h2>
-  
+
   <div class="mcp-tool">
-    <code>searchTickets</code> - Search for WordPress Trac tickets by keyword or filter
+    <code>searchTickets</code> - Search for ${config.displayName} tickets by keyword or filter
   </div>
-  
+
   <div class="mcp-tool">
     <code>getTicket</code> - Get detailed information about a specific ticket
   </div>
-  
+
   <div class="mcp-tool">
     <code>getChangeset</code> - Get information about a code changeset/commit
   </div>
-  
+
   <div class="mcp-tool">
-    <code>getTimeline</code> - Get recent activity from WordPress Trac
+    <code>getTimeline</code> - Get recent activity from ${config.displayName}
   </div>
-  
+
   <div class="mcp-tool">
     <code>getTracInfo</code> - Get Trac metadata (components, milestones, priorities, severities)
   </div>
 
   <h2>ChatGPT Deep Research Tools</h2>
-  
+
   <div class="mcp-tool">
     <code>search</code> - Intelligent search for tickets, changesets, and activity
   </div>
-  
+
   <div class="mcp-tool">
     <code>fetch</code> - Get detailed information about specific items
   </div>
-  
+
   <h2>Configuration</h2>
-  
+
   <h3>Standard MCP (Claude Desktop, etc.)</h3>
   <div class="code-block">
     <code>{
   "mcpServers": {
-    "wordpress-trac": {
+    "${config.instanceType}-trac": {
       "command": "npx",
       "args": ["mcp-remote", "${url.origin}/mcp"]
     }
@@ -1594,9 +1595,9 @@ function getLandingPage(url: URL, versionInfo?: { id: string; tag?: string; time
 4. Add as research source if needed</code>
   </div>
   <p>See: <a href="https://platform.openai.com/docs/mcp#connect-in-chatgpt">ChatGPT MCP Documentation</a></p>
-  
+
   <div class="footer">
-    <p><a href="https://core.trac.wordpress.org/">WordPress Trac</a> • <a href="https://modelcontextprotocol.io/">MCP Docs</a> • an experiment by <a href="https://automattic.ai">A8C AI</a></p>
+    <p><a href="${config.baseUrl}">${config.instanceName}</a> • <a href="https://modelcontextprotocol.io/">MCP Docs</a> • an experiment by <a href="https://automattic.ai">A8C AI</a></p>
     ${versionInfo ? `<p style="margin-top: 0.5rem; font-size: 0.8rem; color: #999;">
       Version: <code style="font-size: 0.8rem;">${versionInfo.id.substring(0, 8)}</code>
       ${versionInfo.tag ? ` • Tag: <code style="font-size: 0.8rem;">${versionInfo.tag}</code>` : ''}
@@ -1608,19 +1609,10 @@ function getLandingPage(url: URL, versionInfo?: { id: string; tag?: string; time
   `;
 }
 
-// Environment interface
-interface Env {
-  ENVIRONMENT?: string;
-  CF_VERSION_METADATA?: {
-    id: string;
-    tag?: string;
-    timestamp: string;
-  };
-}
-
 // Cloudflare Worker export
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    const config = getTracConfig(env);
     const url = new URL(request.url);
 
     // Serve favicon
@@ -1639,13 +1631,13 @@ export default {
     
     // Generate OG image
     if (url.pathname === "/og-image.png") {
-      const title = (url.searchParams.get("title") || "WordPress Trac MCP Server")
+      const title = (url.searchParams.get("title") || `${config.instanceName} MCP Server`)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-      const subtitle = (url.searchParams.get("subtitle") || "Model Context Protocol server for WordPress.org Trac integration")
+      const subtitle = (url.searchParams.get("subtitle") || `Model Context Protocol server for ${config.displayName}`)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -1698,7 +1690,7 @@ export default {
     // Serve landing page at root
     if (url.pathname === "/") {
       const versionInfo = env.CF_VERSION_METADATA;
-      return new Response(getLandingPage(url, versionInfo), {
+      return new Response(getLandingPage(url, config, versionInfo), {
         headers: { "Content-Type": "text/html" }
       });
     }
@@ -1719,9 +1711,9 @@ export default {
         const mcpRequest = JsonRpcRequestSchema.parse(body);
         
         // Route to appropriate handler based on endpoint
-        const response = url.pathname === "/mcp/chatgpt" 
-          ? await handleChatGPTMcpRequest(mcpRequest)
-          : await handleMcpRequest(mcpRequest);
+        const response = url.pathname === "/mcp/chatgpt"
+          ? await handleChatGPTMcpRequest(mcpRequest, config)
+          : await handleMcpRequest(mcpRequest, config);
         
         return new Response(JSON.stringify(response), {
           headers: { 

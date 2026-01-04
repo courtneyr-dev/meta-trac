@@ -1,0 +1,6 @@
+id,Summary,Status,Owner,Type,Priority,Milestone
+5483,Force-enable release confirmations for high-target plugins,new,,enhancement,highest omg bbq,
+5744,"For plugins using release confirmation, email confirmation is not required to add/remove committers.",new,,feature request,highest omg bbq,
+7235,Props page credits people who have gotten unprops,new,,defect (bug),highest omg bbq,
+30,Make better theme test data for display in the theme directory.,new,,enhancement,high,
+83,X account for jobs.wordpress.net,assigned,coffee2code,enhancement,high,

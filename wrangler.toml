@@ -1,6 +1,6 @@
-# Wrangler configuration for WordPress Trac MCP Server
+# Wrangler configuration for WordPress Meta Trac MCP Server
 
-name = "mcp-server-wporg-trac-staging"
+name = "mcp-server-wporg-meta-trac-staging"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
@@ -12,11 +12,17 @@ compatibility_flags = ["nodejs_compat"]
 # Environment variables (if needed)
 [vars]
 ENVIRONMENT = "development"
+TRAC_INSTANCE = "meta"
 
-# Production environment
+# Production environment for Core Trac
 [env.production]
 name = "wordpress-trac-mcp-server-prod"
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", TRAC_INSTANCE = "core" }
+
+# Meta Trac environment
+[env.meta]
+name = "wordpress-meta-trac-mcp-server"
+vars = { ENVIRONMENT = "production", TRAC_INSTANCE = "meta" }
 
 # Specify the account ID and zone ID if needed
 # account_id = "your-account-id"
@@ -56,7 +62,7 @@ binding = "CF_VERSION_METADATA"
 # [[durable_objects.bindings]]
 # name = "CACHE"
 # class_name = "TracCache"
-# script_name = "mcp-server-wporg-trac-staging"
+# script_name = "mcp-server-wporg-meta-trac-staging"
 
 # KV namespaces (for caching)
 # [[kv_namespaces]]
